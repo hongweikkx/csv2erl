@@ -1,0 +1,12 @@
+{application, csv2erl,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { csv2erl_app, []}},
+  {env, []}
+ ]}.
