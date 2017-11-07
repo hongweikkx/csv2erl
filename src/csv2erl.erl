@@ -22,20 +22,12 @@ start([FileName | Tail], Opts) ->
     case is_csv(FileName) of
         true ->
             TupleList = erfc_4180:parse_file(?CSV_FILE_DIR ++ FileName, Opts),
-            io:format("####TupleList:~p~n", [TupleList]),
-            write_2_erl(FileName, TupleList);
+            erl_generate:generate_hrl([TupleList]);
         false ->
             skip
     end,
     start(Tail, Opts).
 
-write_2_erl(CsvName, TupleList) ->
-    ErlName = csv_2_erl_file_name(CsvName),
-    io:format("#########ErlName:~p~n", [ErlName]),
-    {ok, Fd} = file:open(ErlName, [write]),
-    Str = term_to_binary(TupleList),
-    io:format(Fd, Str, []),
-    file:close(Fd).
 
 get_files() ->
     case file:list_dir(?CSV_FILE_DIR) of
@@ -46,11 +38,10 @@ get_files() ->
     end.
 
 is_csv(FileName) ->
-    WordList = string:tokens(FileName, "."),
-    "csv" == lists:last(WordList).
+    ".csv" == filename:extension(FileName).
 
-csv_2_erl_file_name(CsvName) ->
-    WordList = string:tokens(CsvName, "."),
-    NWordList = lists:droplast(WordList),
-    ?ERL_FILE_DIR ++ lists:concat(NWordList) ++ ".erl".
+%%csv_2_erl_file_name(CsvName) ->
+%%    BaseName = filename:basename(CsvName, ".csv"),
+%%    lists:concat([?ERL_FILE_DIR, BaseName, ".erl"]).
+
 

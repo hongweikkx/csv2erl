@@ -4,13 +4,13 @@
 %%% @author Gordon Guthrie
 %%% @author Gerald Gutierrez
 %%% @author Luke Krasnoff
+%%% @author changed by hongweigaokkx@163.com
 %%%
 %%% @doc This file implements rfc 4180 - the format used for
 %%%  Comma-Separated Values (CSV) files and registers the associated
 %%%  MIME type "text/csv".
 %%% @end
 %%%-------------------------------------------------------------------
-%%% @change_author hongweigaokkx@163.com
 %%%
 
 -module(erfc_4180).
@@ -35,11 +35,15 @@
 %% ——— Exported ——————————
 parse_file(FileName,InitialState,Fun,Opts) ->
     {ok, Binary} = file:read_file(FileName),
-    parse(Binary,InitialState,Fun,Opts).
+    io:format("#########BInary;~p~n", [Binary]),
+    <<_B:24, NBinary/binary>> = Binary,
+    parse(NBinary,InitialState,Fun,Opts).
 
 parse_file(FileName,Opts) ->
     {ok, Binary} = file:read_file(FileName),
-    parse(Binary,Opts).
+    io:format("#########BInary;~p~n", [Binary]),
+    <<_B:24, NBinary/binary>> = Binary,
+    parse(NBinary,Opts).
 
 parse(Binary, Opts) ->
     R = parse(Binary,[],fun(Fold,Record) -> [Record|Fold] end,Opts),
@@ -182,6 +186,7 @@ do_parse(<<$\n,Rest/binary>>,S = #ecsv{}) ->
 do_parse(<<$, ,Rest/binary>>,S = #ecsv{current_field=Field,col=Col,
                                        current_record=Record,columns=Cols, lines = Lines,
                                        type_specs=Specs})->
+    io:format("#########Field:~p~n", [Field]),
     NRecord =
     case is_convert(Lines) of
         true ->
@@ -211,7 +216,7 @@ do_parse(<<X,Rest/binary>>,S = #ecsv{state=normal,current_field=Field,columns=Co
 new_record(S=#ecsv{cols=Cols,current_field=Field,current_record=Record, col = Col, type_specs = Specs,
                    fold_state=State,fold_fun=Fun,lines=Lines}) ->
     %% change by hongeigaokkx@163.com, because the last field cann't be converted
-    io:format("Lines:~p, ~p, ~p~n", [Lines, ?NOT_CHANGE_END_LINE, Lines =< ?NOT_CHANGE_END_LINE -1]),
+    io:format("###########Field:~p~n", [Field]),
     NRecord =
     case is_convert(Lines) of
         true ->
