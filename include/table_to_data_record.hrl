@@ -6,11 +6,12 @@
 %%% @end	
 -ifndef(TABLE_TO_DATA_RECORD).	
 -define(TABLE_TO_DATA_RECORD, true).	
--record(hero_record,{	
-heroid,    %%英雄id	
-name,    %%名字	
-type,    %%类型	
-type_id,    %%类型id	
-easy     %%难易程度	
+-record(data_user,{	
+user_id,    %%玩家id	
+name     %%玩家名字	
+}).	
+-record(hero_user,{	
+hero_id,    %%英雄id	
+hero_name     %%英雄名字	
 }).	
 -endif.

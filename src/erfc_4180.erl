@@ -5,6 +5,9 @@
 %%% @author Gerald Gutierrez
 %%% @author Luke Krasnoff
 %%% @author changed by hongweigaokkx@163.com
+%%%         change to:
+%%%                 1. 将csv的?TYPE_LINE, 作为类型行, 根据这个类型进行数值转换(去除原有的opts控制)
+%%%                 2. 定义一个行数宏?TYPE_LINE in config.hrl, 在TYPE_LINE行之前的都不进行数值转换
 %%%
 %%% @doc This file implements rfc 4180 - the format used for
 %%%  Comma-Separated Values (CSV) files and registers the associated
@@ -15,7 +18,9 @@
 
 -module(erfc_4180).
 
--export([parse_file/4,parse_file/2,parse/4,parse/2]).
+-export([
+    parse_file/1
+    ]).
 
 -record(ecsv,{
           state = field_start, % field_start|normal|quoted|post_quoted
@@ -23,41 +28,25 @@
           col = 1, % current col in record
           current_field  = [],
           current_record = [],
-          lines=0,
-          columns=0,
-          type_specs=undefined,
+          lines = 0,
+          columns = 0,
+          type_specs = {},
           fold_state,
           fold_fun             % user supplied fold function
          }).
-
--define(NOT_CHANGE_END_LINE,  2).    %% 内容保留原样的结束行数
+-include("config.hrl").
 
 %% ——— Exported ——————————
-parse_file(FileName,InitialState,Fun,Opts) ->
+parse_file(FileName) ->
     {ok, Binary} = file:read_file(FileName),
-    io:format("#########BInary;~p~n", [Binary]),
-    <<_B:24, NBinary/binary>> = Binary,
-    parse(NBinary,InitialState,Fun,Opts).
+    parse(Binary).
 
-parse_file(FileName,Opts) ->
-    {ok, Binary} = file:read_file(FileName),
-    io:format("#########BInary;~p~n", [Binary]),
-    <<_B:24, NBinary/binary>> = Binary,
-    parse(NBinary,Opts).
-
-parse(Binary, Opts) ->
-    R = parse(Binary,[],fun(Fold,Record) -> [Record|Fold] end,Opts),
+parse(Binary) ->
+    R = parse(Binary, [], fun(Fold,Record) -> [Record|Fold] end),
     lists:reverse(R).
 
-parse(Binary,InitialState,Fun,Opts) ->
-    TypeSpecs = create_converters(1,
-                                  lists:sort(fun(A, B) ->
-                                                     element(1, A) <
-                                                         element(1, B)
-                                             end, Opts), []),
-    io:format("##########TypeSpecs:~p~n", [TypeSpecs]),
-    do_parse(Binary,#ecsv{fold_state=InitialState,fold_fun=Fun,
-                          type_specs=TypeSpecs}).
+parse(Binary, InitialState, Fun) ->
+    do_parse(Binary, #ecsv{fold_state=InitialState, fold_fun=Fun, type_specs={}}).
 
 %% ——— Converters ———————
 create_converters(C, [{C, Type} | Rest], Converter) ->
@@ -72,21 +61,27 @@ create_converters(_, [], Converters) ->
 default_converter(String) ->
     String.
 
-create_converter(existing_atom) ->
+create_converter("existing_atom") ->
     fun(Atom) ->
             erlang:list_to_existing_atom(Atom)
     end;
-create_converter(atom) ->
+create_converter("atom") ->
     fun(Atom) ->
             erlang:list_to_atom(Atom)
     end;
-create_converter(integer) ->
+create_converter("integer") ->
     fun([]) ->
             0;
        (Int) ->
             erlang:list_to_integer(string:strip(Int))
     end;
-create_converter(currency) ->
+create_converter("int") ->
+    fun([]) ->
+        0;
+        (Int) ->
+            erlang:list_to_integer(string:strip(Int))
+    end;
+create_converter("currency") ->
     fun([]) ->
             0.0;
        (Float0) ->
@@ -102,19 +97,15 @@ create_converter(currency) ->
                              end, Float0),
             erlang:list_to_float(string:strip(Float1))
     end;
-create_converter(float) ->
+create_converter("float") ->
     fun([]) ->
             0.0;
        (Float) ->
             erlang:list_to_float(string:strip(Float))
     end;
-create_converter(string) ->
+create_converter("string") ->
     fun(String) ->
            String
-    end;
-create_converter(date) ->
-    fun(String) ->
-            ec_date:parse(String)
     end.
 
 convert(Index, Element, Converters) when Index =< erlang:size(Converters) ->
@@ -186,7 +177,6 @@ do_parse(<<$\n,Rest/binary>>,S = #ecsv{}) ->
 do_parse(<<$, ,Rest/binary>>,S = #ecsv{current_field=Field,col=Col,
                                        current_record=Record,columns=Cols, lines = Lines,
                                        type_specs=Specs})->
-    io:format("#########Field:~p~n", [Field]),
     NRecord =
     case is_convert(Lines) of
         true ->
@@ -215,22 +205,34 @@ do_parse(<<X,Rest/binary>>,S = #ecsv{state=normal,current_field=Field,columns=Co
 %%check the record size against the previous, and actualize state.
 new_record(S=#ecsv{cols=Cols,current_field=Field,current_record=Record, col = Col, type_specs = Specs,
                    fold_state=State,fold_fun=Fun,lines=Lines}) ->
-    %% change by hongeigaokkx@163.com, because the last field cann't be converted
-    io:format("###########Field:~p~n", [Field]),
-    NRecord =
-    case is_convert(Lines) of
-        true ->
-            [convert(Col, lists:reverse(Field), Specs) | Record];
-        false ->
-            [lists:reverse(Field) | Record]
-    end,
-    NewRecord = list_to_tuple(lists:reverse(NRecord)),
+    NField = lists:reverse(Field),
+    {NRecord1, NTypeSpecs} =
+        case is_convert(Lines) of
+            true ->
+                NRecord = lists:reverse([convert(Col, NField, Specs) | Record]),
+                case is_type_line(Lines) of
+                    true ->
+                        F = fun(Type, {AccTypeList, Num}) ->
+                            {[{Num, Type} | AccTypeList], Num + 1}
+                            end,
+                        {TypeList, _} = lists:foldl(F, {[], 1}, NRecord),
+                        SortOpts = lists:sort(fun(A, B) -> element(1, A) < element(1, B) end, TypeList),
+                        TypeSpecs = create_converters(1, SortOpts , []),
+                        {NRecord, TypeSpecs};
+                    false ->
+                        {NRecord, Specs}
+                end;
+            false ->
+                NRecord = lists:reverse([NField | Record]),
+                {NRecord, Specs}
+        end,
+    NewRecord = list_to_tuple(NRecord1),
     if
         (tuple_size(NewRecord) =:= Cols) or (Cols =:= undefined) ->
             NewState = Fun(State,NewRecord),
             S#ecsv{state=field_start,cols=tuple_size(NewRecord),
                    lines=Lines+1, columns=0,col=1,
-                   current_record=[],current_field=[],fold_state=NewState};
+                   current_record=[],current_field=[],fold_state=NewState, type_specs = NTypeSpecs};
         (tuple_size(NewRecord) =/= Cols) ->
             throw({ecsv_exception,bad_record_size, Lines, Cols})
     end.
@@ -243,47 +245,49 @@ new_record(S=#ecsv{cols=Cols,current_field=Field,current_record=Record, col = Co
 
 csv_test() ->
     %% empty binary
-    ?assertEqual([], parse(<<>>, [])),
+    ?assertEqual([], parse(<<>>)),
     %% Unix LF
     ?assertEqual([{"1A","1B","1C"},{"2A","2B","2C"}],
-                 parse(<<"1A,1B,1C\n2A,2B,2C">>, [])),
+                 parse(<<"1A,1B,1C\n2A,2B,2C">>)),
     %% Unix LF with extra spaces after quoted element stripped
     ?assertEqual([{"1A","1B","1C"},{"2A","2B","2C"}],
-                 parse(<<"\"1A\"   ,\"1B\" ,\"1C\"",10,"\"2A\" ,\"2B\",\"2C\"">>, [])),
+                 parse(<<"\"1A\"   ,\"1B\" ,\"1C\"",10,"\"2A\" ,\"2B\",\"2C\"">>)),
     %% Unix LF with extra spaces preserved in unquoted element
     ?assertEqual([{" 1A ","1B","1C"},{"2A","2B","2C"}],
-                 parse(<<" 1A ,1B,1C\n2A,2B,2C">>, [])),
+                 parse(<<" 1A ,1B,1C\n2A,2B,2C">>)),
     %% Pre Mac OSX 10 CR
     ?assertEqual([{"1A","1B","1C"},{"2A","2B","2C"}],
-                 parse(<<"1A,1B,1C\r2A,2B,2C">>, [])),
+                 parse(<<"1A,1B,1C\r2A,2B,2C">>)),
     %% Windows CRLF
     ?assertEqual([{"1A","1B","1C"},{"2A","2B","2C"}],
-                 parse(<<"1A,1B,1C\r\n2A,2B,2C">>, [])),
+                 parse(<<"1A,1B,1C\r\n2A,2B,2C">>)),
 
     %% Quoted element
     ?assertEqual([{"1A","1B"}],
-                 parse(<<"1A,1B">>, [])),
+                 parse(<<"1A,1B">>)),
     %% Nested quoted element
     ?assertEqual([{"1A","\"1B\""}],
-                 parse(<<"\"1A\",\"\"\"1B\"\"\"">>, [])),
+                 parse(<<"\"1A\",\"\"\"1B\"\"\"">>)),
     %% Quoted element with embedded LF
     ?assertEqual([{"1A","1\nB"}],
-                 parse(<<"\"1A\",\"1\nB\"">>, [])),
+                 parse(<<"\"1A\",\"1\nB\"">>)),
     %% Quoted element with embedded quotes (1)
     ?assertThrow({ecsv_exception,bad_record,0,7},
-                 parse(<<"\"1A\",","\"\"B\"">>, [])),
+                 parse(<<"\"1A\",","\"\"B\"">>)),
     %% Quoted element with embedded quotes (2)
     ?assertEqual([{"1A","blah\"B"}],
-                 parse(<<"\"1A\",\"blah\"",$","B\"">>, [])), %"
+                 parse(<<"\"1A\",\"blah\"",$","B\"">>)), %"
     %% Missing 2nd quote
     ?assertThrow({ecsv_exception,unclosed_quote,0,8},
-                 parse(<<"\"1A\",\"2B">>, [])),
+                 parse(<<"\"1A\",\"2B">>)),
     %% Bad record size
     ?assertThrow({ecsv_exception,bad_record_size, _, _},
-                 parse(<<"1A,1B,1C\n2A,2B\n">>, [])).
+                 parse(<<"1A,1B,1C\n2A,2B\n">>)).
 
 -endif.
 
 
 is_convert(Lines) ->
-    Lines >= ?NOT_CHANGE_END_LINE.
+    Lines >= ?TYPE_LINE - 1.
+is_type_line(Lines) ->
+    Lines == ?TYPE_LINE - 1.
