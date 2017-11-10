@@ -33,13 +33,15 @@ gen_erl() ->
 gen_erl([]) ->
     ok;
 gen_erl([H | Tail]) ->
-    {FileBaseName, GenFile, _} = H,
+    {FileBaseName, GenFile, RecordName} = H,
     case check_csv(FileBaseName) of
         {ok, FileName} ->
             TupleList = erfc_4180:parse_file(FileName),
+            RecordInfo = get_record_info(lists:nth(1, TupleList)),
             Datas = lists:nthtail(?TYPE_LINE, TupleList),
             GenedFileName = gened_file_name(FileBaseName),
-            GenFile:gen(GenedFileName, FileBaseName, Datas);
+            %%  生成的文件名, 生成文件module, 生成的record名, 生成record的record_info, 生成的datas
+            GenFile:gen(GenedFileName, FileBaseName, RecordName, RecordInfo, Datas);
         false ->
             skip
     end,
@@ -60,3 +62,7 @@ check_csv(FileBaseName) ->
 
 gened_file_name(FileBaseName) ->
     lists:concat([?ERL_FILE_DIR, FileBaseName, ".erl"]).
+
+get_record_info(Tuple) ->
+    Infos = tuple_to_list(Tuple),
+    [list_to_atom(Info) || Info <- Infos].

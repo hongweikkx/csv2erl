@@ -12,9 +12,8 @@
 
 -define(TABLES,
     [                    %% {csv 文件名, 生成文件, 生成record名
-        {user, data_user, data_user},
-        {hero, data_hero, hero_user}
+        {user_data, gen_data_user, data_user},
+        {hero, gen_data_hero, data_hero}
     ]
 ).
-
 -endif.
