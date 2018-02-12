@@ -58,9 +58,9 @@ generate_hrl_record_util([Id | Tail], DescList, AccStr) ->
         end,
     case Tail =:= [] of   %% 是否是最后一个字段
         true ->
-            NAccStr = lists:concat([AccStr, "    ", string:to_lower(Id), "     %%", Desc,"\t\n"]);
+            NAccStr = lists:concat([AccStr, "\t", string:to_lower(Id), "\t %%", Desc,"\t\n"]);
         false ->
-            NAccStr = lists:concat([AccStr, "    ", string:to_lower(Id), ",    %%", Desc,"\t\n"])
+            NAccStr = lists:concat([AccStr, "\t", string:to_lower(Id), ",\t%%", Desc,"\t\n"])
     end,
     generate_hrl_record_util(Tail, DescTail, NAccStr).
 
@@ -94,15 +94,15 @@ generate_include_str(HrlName) ->
 
 generate_single_record(RecordName, RecordInfo, DataTuple) ->
     DataList = tuple_to_list(DataTuple),
-    Begin = io_lib:format("    #~p{\t\n", [RecordName]),
+    Begin = io_lib:format("\t#~p{\t\n", [RecordName]),
     F = fun(EAtom, {AccStr, AccDataList}) ->
         [Data | TailData] = AccDataList,
         DataStr =
         case TailData =:= [] of
             true ->
-                io_lib:format("        ~p = ~p~n", [EAtom, Data]);
+                io_lib:format("\t\t~p = ~p~n", [EAtom, Data]);
             false ->
-                io_lib:format("        ~p = ~p,~n", [EAtom, Data])
+                io_lib:format("\t\t~p = ~p,~n", [EAtom, Data])
         end,
         NAccStr = lists:concat([AccStr, DataStr]),
         {NAccStr, TailData}
